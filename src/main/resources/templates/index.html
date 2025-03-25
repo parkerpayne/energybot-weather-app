@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Data Lookup</title>
+    <link rel="stylesheet" href="/css/default.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Weather Data Lookup</h1>
+            <p>Search NOAA weather recordings by station ID</p>
+        </header>
+        
+        <main>
+            <section class="search-section">
+                <form id="search-form">
+                    <div class="input-group">
+                        <label for="station-id">Station ID:</label>
+                        <input type="text" id="station-id" placeholder="Enter 11-character station ID" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="element-type">Element Type (Optional):</label>
+                        <select id="element-type">
+                            <option value="">All Elements</option>
+                            <option value="PRCP">PRCP - Precipitation</option>
+                            <option value="TMAX">TMAX - Max Temperature</option>
+                            <option value="TMIN">TMIN - Min Temperature</option>
+                            <option value="SNOW">SNOW - Snowfall</option>
+                            <option value="SNWD">SNWD - Snow Depth</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="date-range">Date Range (Optional):</label>
+                        <div class="date-inputs">
+                            <input type="date" id="start-date">
+                            <span>to</span>
+                            <input type="date" id="end-date">
+                        </div>
+                    </div>
+                    <button type="submit">Search</button>
+                </form>
+            </section>
+
+            <section class="results-section" id="results-container">
+                <div class="loading-indicator" id="loading-indicator" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Loading data...</p>
+                </div>
+                
+                <div class="results-content" id="results-content" style="display: none;">
+                    <h2>Results for Station: <span id="result-station-id"></span></h2>
+                    
+                    <div class="chart-container">
+                        <canvas id="weather-chart"></canvas>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table id="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Element</th>
+                                    <th>Value</th>
+                                    <th>Flags (M-Q-S)</th>
+                                    <th>Obs Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-body">
+                                <!-- Results will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="no-results" id="no-results" style="display: none;">
+                    <p>No weather data found for the selected criteria.</p>
+                </div>
+                
+                <div class="error-message" id="error-message" style="display: none;">
+                    <p>An error occurred while fetching data. Please try again.</p>
+                </div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>Data source: <a href="https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/2024.csv.gz" target="_blank">NOAA GHCN Daily Records (2024)</a></p>
+            <p>Weather Data Application | NOAA GHCN Daily Records</p>
+        </footer>
+    </div>
+
+    <!-- Load external JavaScript file -->
+    <script src="/js/index.js"></script>
+</body>
+</html>
