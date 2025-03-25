@@ -3,95 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weather Data Lookup</title>
+    <title>Weather Data Explorer</title>
     <link rel="stylesheet" href="/css/default.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Weather Data Lookup</h1>
-            <p>Search NOAA weather recordings by station ID</p>
+            <h1>Weather Data Explorer</h1>
+            <p>Search historical weather data from thousands of weather stations</p>
         </header>
         
         <main>
+            <!-- Search Section -->
             <section class="search-section">
                 <form id="search-form">
                     <div class="input-group">
-                        <label for="station-id">Station ID:</label>
-                        <input type="text" id="station-id" placeholder="Enter 11-character station ID" required>
+                        <label for="station-id">Station ID</label>
+                        <input type="text" id="station-id" name="station-id" placeholder="Enter station ID (e.g., USC00186350)" required>
                     </div>
+                    
                     <div class="input-group">
-                        <label for="element-type">Element Type (Optional):</label>
-                        <select id="element-type">
-                            <option value="">All Elements</option>
-                            <option value="PRCP">PRCP - Precipitation</option>
-                            <option value="TMAX">TMAX - Max Temperature</option>
-                            <option value="TMIN">TMIN - Min Temperature</option>
-                            <option value="SNOW">SNOW - Snowfall</option>
-                            <option value="SNWD">SNWD - Snow Depth</option>
+                        <label for="element-type">Element Type (Optional)</label>
+                        <select id="element-type" name="element-type">
+                            <option value="">All Types</option>
+                            <option value="PRCP">Precipitation</option>
+                            <option value="TMAX">Maximum Temperature</option>
+                            <option value="TMIN">Minimum Temperature</option>
+                            <option value="SNOW">Snowfall</option>
+                            <option value="SNWD">Snow Depth</option>
                         </select>
                     </div>
+                    
                     <div class="input-group">
-                        <label for="date-range">Date Range (Optional):</label>
+                        <label>Date Range (Optional)</label>
                         <div class="date-inputs">
-                            <input type="date" id="start-date">
+                            <input type="date" id="start-date" name="start-date">
                             <span>to</span>
-                            <input type="date" id="end-date">
+                            <input type="date" id="end-date" name="end-date">
                         </div>
                     </div>
+                    
                     <button type="submit">Search</button>
                 </form>
             </section>
-
-            <section class="results-section" id="results-container">
-                <div class="loading-indicator" id="loading-indicator" style="display: none;">
+            
+            <!-- Results Section -->
+            <section class="results-section">
+                <!-- Loading Indicator -->
+                <div id="loading-indicator" class="loading-indicator">
                     <div class="spinner"></div>
                     <p>Loading data...</p>
                 </div>
                 
-                <div class="results-content" id="results-content" style="display: none;">
-                    <h2>Results for Station: <span id="result-station-id"></span></h2>
+                <!-- No Results Message -->
+                <div id="no-results" class="no-results" style="display: none;">
+                    <p>No weather data found for the specified criteria.</p>
+                </div>
+                
+                <!-- Error Message -->
+                <div id="error-message" class="error-message" style="display: none;">
+                    <p>Error retrieving data. Please try again.</p>
+                </div>
+                
+                <!-- Results Content -->
+                <div id="results-content" class="results-content" style="display: none;">
+                    <h2>Weather Data for Station: <span id="result-station-id"></span></h2>
                     
+                    <!-- Chart Visualization -->
                     <div class="chart-container">
                         <canvas id="weather-chart"></canvas>
                     </div>
                     
+                    <!-- Data Table -->
                     <div class="table-container">
-                        <table id="results-table">
+                        <table>
                             <thead>
                                 <tr>
                                     <th>Date</th>
                                     <th>Element</th>
                                     <th>Value</th>
-                                    <th>Flags (M-Q-S)</th>
-                                    <th>Obs Time</th>
+                                    <th>Flags (M/Q/S)</th>
+                                    <th>Observation Time</th>
                                 </tr>
                             </thead>
                             <tbody id="results-body">
-                                <!-- Results will be populated here -->
+                                <!-- Results will be inserted here -->
                             </tbody>
                         </table>
                     </div>
-                </div>
-                
-                <div class="no-results" id="no-results" style="display: none;">
-                    <p>No weather data found for the selected criteria.</p>
-                </div>
-                
-                <div class="error-message" id="error-message" style="display: none;">
-                    <p>An error occurred while fetching data. Please try again.</p>
                 </div>
             </section>
         </main>
         
         <footer>
-            <p>Data source: <a href="https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/2024.csv.gz" target="_blank">NOAA GHCN Daily Records (2024)</a></p>
-            <p>Weather Data Application | NOAA GHCN Daily Records</p>
+            <p>&copy; 2023 Weather Data Explorer | Powered by <a href="https://www.ncdc.noaa.gov/ghcn-daily-description" target="_blank">NOAA GHCN Daily</a></p>
         </footer>
     </div>
-
-    <!-- Load external JavaScript file -->
+    
+    <!-- Include external JavaScript -->
     <script src="/js/index.js"></script>
 </body>
 </html>

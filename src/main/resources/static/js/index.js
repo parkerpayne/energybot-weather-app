@@ -1,3 +1,9 @@
+/**
+ * Weather Data Application
+ * JavaScript for handling API interactions and UI updates
+ */
+
+// DOM elements
 const searchForm = document.getElementById('search-form');
 const stationIdInput = document.getElementById('station-id');
 const elementTypeSelect = document.getElementById('element-type');
@@ -11,18 +17,198 @@ const errorMessage = document.getElementById('error-message');
 const resultsBody = document.getElementById('results-body');
 const weatherChart = document.getElementById('weather-chart');
 
+// System status overlay elements (will be created dynamically)
+let systemStatusOverlay = null;
+let statusCheckInterval = null;
+
 // Chart instance
 let chartInstance = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Check system status
+    checkSystemStatus();
     
     // Attach event listeners
     searchForm.addEventListener('submit', handleFormSubmit);
 });
 
+/**
+ * Create system status overlay
+ */
+function createSystemStatusOverlay() {
+    // Create overlay if it doesn't exist
+    if (!systemStatusOverlay) {
+        systemStatusOverlay = document.createElement('div');
+        systemStatusOverlay.className = 'system-status-overlay';
+        
+        const overlayContent = document.createElement('div');
+        overlayContent.className = 'system-status-content';
+        
+        const title = document.createElement('h2');
+        title.textContent = 'System Initializing';
+        
+        const message = document.createElement('p');
+        message.textContent = 'The weather data is being downloaded and processed. Please wait...';
+        
+        const progressContainer = document.createElement('div');
+        progressContainer.className = 'progress-container';
+        
+        const progressBar = document.createElement('div');
+        progressBar.className = 'progress-bar';
+        progressBar.id = 'system-progress-bar';
+        
+        const progressText = document.createElement('div');
+        progressText.className = 'progress-text';
+        progressText.id = 'system-progress-text';
+        progressText.textContent = 'Preparing data...';
+        
+        const statusDetails = document.createElement('div');
+        statusDetails.className = 'status-details';
+        statusDetails.id = 'system-status-details';
+        
+        progressContainer.appendChild(progressBar);
+        progressContainer.appendChild(progressText);
+        
+        overlayContent.appendChild(title);
+        overlayContent.appendChild(message);
+        overlayContent.appendChild(progressContainer);
+        overlayContent.appendChild(statusDetails);
+        
+        systemStatusOverlay.appendChild(overlayContent);
+        document.body.appendChild(systemStatusOverlay);
+    }
+    
+    return systemStatusOverlay;
+}
 
-// Format date as YYYY-MM-DD for HTML date inputs
+/**
+ * Check system status
+ */
+function checkSystemStatus() {
+    fetch('/api/status')
+        .then(response => response.json())
+        .then(status => {
+            if (!status.ready) {
+                // Show system status overlay
+                const overlay = createSystemStatusOverlay();
+                overlay.style.display = 'flex';
+                
+                // Update progress information
+                updateSystemStatusDisplay(status);
+                
+                // Set up interval to check status periodically
+                if (!statusCheckInterval) {
+                    statusCheckInterval = setInterval(checkSystemStatus, 2000);
+                }
+                
+                // Disable form submission
+                searchForm.querySelector('button[type="submit"]').disabled = true;
+            } else {
+                // System is ready, hide overlay and enable form
+                if (systemStatusOverlay) {
+                    systemStatusOverlay.style.display = 'none';
+                }
+                
+                // Clear interval
+                if (statusCheckInterval) {
+                    clearInterval(statusCheckInterval);
+                    statusCheckInterval = null;
+                }
+                
+                // Enable form submission
+                searchForm.querySelector('button[type="submit"]').disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error checking system status:', error);
+            
+            // If error, show error in overlay
+            const overlay = createSystemStatusOverlay();
+            const progressText = document.getElementById('system-progress-text');
+            const statusDetails = document.getElementById('system-status-details');
+            
+            if (progressText) {
+                progressText.textContent = 'Error checking status';
+                progressText.style.color = '#d32f2f';
+            }
+            
+            if (statusDetails) {
+                statusDetails.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+            
+            // Try again in 5 seconds
+            if (!statusCheckInterval) {
+                statusCheckInterval = setInterval(checkSystemStatus, 5000);
+            }
+        });
+}
+
+/**
+ * Update system status display
+ */
+function updateSystemStatusDisplay(status) {
+    const progressBar = document.getElementById('system-progress-bar');
+    const progressText = document.getElementById('system-progress-text');
+    const statusDetails = document.getElementById('system-status-details');
+    
+    if (!progressBar || !progressText || !statusDetails) return;
+    
+    // Update title to reflect current status
+    const title = document.querySelector('.system-status-content h2');
+    if (title) {
+        const phase = status.progress?.isDownloading ? 'Downloading' : 'Processing';
+        title.textContent = `System Initializing - ${phase} Phase`;
+    }
+    
+    // Handle download progress differently than processing progress
+    if (status.progress?.isDownloading) {
+        // Set progress bar width based on download percentage
+        const percent = status.progress.downloadPercent || 0;
+        progressBar.style.width = `${percent}%`;
+        
+        // Update progress text
+        progressText.textContent = status.message || 'Downloading data...';
+        
+        // Format download size
+        let detailsHtml = '';
+        if (status.progress.downloadedBytes !== undefined && status.progress.totalBytes !== undefined) {
+            const downloadedMB = (status.progress.downloadedBytes / (1024 * 1024)).toFixed(2);
+            const totalMB = (status.progress.totalBytes / (1024 * 1024)).toFixed(2);
+            detailsHtml += `<p>Downloaded: ${downloadedMB} MB of ${totalMB} MB (${percent}%)</p>`;
+        }
+        
+        statusDetails.innerHTML = detailsHtml;
+    } else {
+        // Set progress bar width based on processing percentage
+        const percent = status.progress?.percentComplete || 0;
+        progressBar.style.width = `${percent}%`;
+        
+        // Update progress text
+        progressText.textContent = status.message || status.status || 'Processing...';
+        
+        // Build status details HTML
+        let detailsHtml = '';
+        
+        if (status.progress) {
+            const { processedLines, totalLines, processedStations } = status.progress;
+            
+            if (processedLines !== undefined && totalLines !== undefined) {
+                detailsHtml += `<p>Processed ${processedLines.toLocaleString()} of ${totalLines.toLocaleString()} lines (${percent}%)</p>`;
+            }
+            
+            if (processedStations !== undefined) {
+                detailsHtml += `<p>Found ${processedStations.toLocaleString()} stations</p>`;
+            }
+        }
+        
+        statusDetails.innerHTML = detailsHtml;
+    }
+}
+
+/**
+ * Format date as YYYY-MM-DD for HTML date inputs
+ */
 function formatDateForInput(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -30,20 +216,26 @@ function formatDateForInput(date) {
     return `${year}-${month}-${day}`;
 }
 
-// Format date from YYYYMMDD to YYYY-MM-DD for display
+/**
+ * Format date from YYYYMMDD to YYYY-MM-DD for display
+ */
 function formatDateForDisplay(dateStr) {
     if (!dateStr || dateStr.length !== 8) return dateStr;
     return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
 }
 
-// Format observation time from HHMM to HH:MM
+/**
+ * Format observation time from HHMM to HH:MM
+ */
 function formatObsTime(obsTime) {
     if (!obsTime) return 'N/A';
     if (obsTime.length !== 4) return obsTime;
     return `${obsTime.substring(0, 2)}:${obsTime.substring(2, 4)}`;
 }
 
-// Handle form submission
+/**
+ * Handle form submission
+ */
 function handleFormSubmit(event) {
     event.preventDefault();
     
@@ -78,13 +270,19 @@ function handleFormSubmit(event) {
     fetchStationData(stationId, queryString);
 }
 
-// Fetch weather data from API
+/**
+ * Fetch weather data from API
+ */
 function fetchStationData(stationId, queryString) {
     const url = `/api/station/${stationId}${queryString}`;
     
     fetch(url)
         .then(response => {
             if (!response.ok) {
+                if (response.status === 503) {
+                    // Service unavailable - system still initializing
+                    throw new Error('System is still initializing. Please wait and try again.');
+                }
                 throw new Error(`HTTP error: ${response.status}`);
             }
             return response.json();
@@ -101,17 +299,27 @@ function fetchStationData(stationId, queryString) {
         .catch(error => {
             console.error('Error fetching data:', error);
             loadingIndicator.style.display = 'none';
-            showError(`Error: ${error.message}`);
+            
+            if (error.message.includes('initializing')) {
+                // If system is initializing, check status again
+                checkSystemStatus();
+            } else {
+                showError(`Error: ${error.message}`);
+            }
         });
 }
 
-// Display error message
+/**
+ * Display error message
+ */
 function showError(message) {
     errorMessage.querySelector('p').textContent = message;
     errorMessage.style.display = 'block';
 }
 
-// Display weather data results
+/**
+ * Display weather data results
+ */
 function displayResults(data) {
     // Set station ID in results header
     resultStationId.textContent = data.stationId;
@@ -147,7 +355,9 @@ function displayResults(data) {
     resultsContent.style.display = 'block';
 }
 
-// Create chart visualization of weather data
+/**
+ * Create chart visualization of weather data
+ */
 function createChart(data) {
     // Destroy previous chart if it exists
     if (chartInstance) {
@@ -211,7 +421,9 @@ function createChart(data) {
     }
 }
 
-// Prepare data for chart visualization
+/**
+ * Prepare data for chart visualization
+ */
 function prepareChartData(data) {
     // Group data by element type and date
     const elementData = {};

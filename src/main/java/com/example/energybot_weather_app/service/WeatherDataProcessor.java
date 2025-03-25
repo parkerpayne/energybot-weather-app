@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +19,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.GZIPInputStream;
 
 @Service
@@ -32,13 +36,80 @@ public class WeatherDataProcessor {
     
     private final ObjectMapper objectMapper;
     
+    // Status tracking
+    private final AtomicBoolean processingComplete = new AtomicBoolean(false);
+    private final AtomicInteger processedLines = new AtomicInteger(0);
+    private final AtomicInteger totalLines = new AtomicInteger(0);
+    private final AtomicInteger processedStations = new AtomicInteger(0);
+    private final AtomicLong downloadedBytes = new AtomicLong(0);
+    private final AtomicLong totalBytes = new AtomicLong(0);
+    private String currentStatus = "Not started";
+    private long startTime = 0;
+    private boolean isDownloading = false;
+    
     public WeatherDataProcessor(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
     
-    // Initialize the data processing - called at application startup
+    /**
+     * Check if data processing is complete
+     */
+    public boolean isProcessingComplete() {
+        return processingComplete.get();
+    }
+    
+    /**
+     * Get processing progress information
+     */
+    public Map<String, Object> getProcessingProgress() {
+        Map<String, Object> progress = new HashMap<>();
+        progress.put("status", currentStatus);
+        
+        // If downloading, show download progress
+        if (isDownloading) {
+            progress.put("isDownloading", true);
+            progress.put("downloadedBytes", downloadedBytes.get());
+            if (totalBytes.get() > 0) {
+                progress.put("totalBytes", totalBytes.get());
+                int downloadPercent = (int) ((downloadedBytes.get() * 100) / totalBytes.get());
+                progress.put("downloadPercent", downloadPercent);
+            }
+        } else {
+            // If processing, show processing progress
+            int total = totalLines.get();
+            int processed = processedLines.get();
+            
+            progress.put("processedLines", processed);
+            progress.put("totalLines", total);
+            progress.put("processedStations", processedStations.get());
+            
+            if (total > 0) {
+                int percentage = (int) ((processed / (double) total) * 100);
+                progress.put("percentComplete", percentage);
+            } else {
+                progress.put("percentComplete", 0);
+            }
+        }
+        
+        return progress;
+    }
+    
+    /**
+     * Initialize the data processing - called at application startup
+     */
     public void initializeDataProcessing() {
         try {
+            // Reset status
+            processingComplete.set(false);
+            processedLines.set(0);
+            totalLines.set(0);
+            processedStations.set(0);
+            downloadedBytes.set(0);
+            totalBytes.set(0);
+            isDownloading = false;
+            currentStatus = "Checking data directory";
+            startTime = System.currentTimeMillis();
+            
             // Create data directory if it doesn't exist
             Path dataDirectory = Paths.get(dataDir);
             if (!Files.exists(dataDirectory)) {
@@ -46,51 +117,113 @@ public class WeatherDataProcessor {
                 Files.createDirectories(dataDirectory);
                 
                 // Download and process data
+                currentStatus = "Preparing to download data";
                 downloadAndProcessData();
             } else {
                 logger.info("Data directory already exists at: {}", dataDirectory.toAbsolutePath());
                 // Check if the directory is empty, process data if needed
                 if (Files.list(dataDirectory).findAny().isEmpty()) {
                     logger.info("Data directory is empty. Downloading and processing data...");
+                    currentStatus = "Preparing to download data";
                     downloadAndProcessData();
                 } else {
                     logger.info("Data files already exist. Skipping download and processing.");
+                    processingComplete.set(true);
+                    currentStatus = "Ready";
                 }
             }
         } catch (IOException e) {
             logger.error("Error initializing data processing", e);
+            currentStatus = "Error: " + e.getMessage();
         }
     }
     
-    // Download the weather data file and process it
+    /**
+     * Download the weather data file and process it
+     */
     private void downloadAndProcessData() {
         logger.info("Starting to download weather data from: {}", dataUrl);
         
         try {
-            // Download the gzipped data file
+            // Get file size first
             URL url = new URL(dataUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("HEAD");
+            long fileSize = conn.getContentLengthLong();
+            totalBytes.set(fileSize);
+            logger.info("File size to download: {} bytes", fileSize);
+            
+            // Download with progress tracking
+            isDownloading = true;
+            currentStatus = "Downloading weather data";
             Path tempFile = Files.createTempFile("weather_data", ".csv.gz");
             
-            try (InputStream in = url.openStream()) {
-                Files.copy(in, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            try (
+                InputStream in = url.openStream();
+                FileOutputStream fos = new FileOutputStream(tempFile.toFile())
+            ) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    fos.write(buffer, 0, bytesRead);
+                    downloadedBytes.addAndGet(bytesRead);
+                    
+                    // Update status periodically
+                    if (downloadedBytes.get() % (1024 * 1024) < 8192) { // Every ~1MB
+                        long downloaded = downloadedBytes.get();
+                        int percent = (int)((downloaded * 100) / fileSize);
+                        currentStatus = String.format("Downloading: %d%% (%d MB / %d MB)", 
+                                percent, downloaded / (1024 * 1024), fileSize / (1024 * 1024));
+                        logger.info(currentStatus);
+                    }
+                }
             }
             
+            isDownloading = false;
             logger.info("Download complete. Processing data file...");
+            currentStatus = "Counting total lines";
+            
+            // First, count lines to track progress
+            countTotalLines(tempFile);
             
             // Process the data file
+            currentStatus = "Processing data";
             processWeatherDataFile(tempFile);
             
             // Clean up temp file
             Files.deleteIfExists(tempFile);
             
             logger.info("Data processing complete");
+            processingComplete.set(true);
+            currentStatus = "Ready";
             
         } catch (IOException e) {
             logger.error("Error downloading or processing weather data", e);
+            currentStatus = "Error: " + e.getMessage();
+            isDownloading = false;
         }
     }
     
-    // Process the downloaded weather data file
+    /**
+     * Count total lines in the data file for progress tracking
+     */
+    private void countTotalLines(Path dataFile) throws IOException {
+        try (
+            InputStream fileStream = Files.newInputStream(dataFile);
+            GZIPInputStream gzipStream = new GZIPInputStream(fileStream);
+            InputStreamReader reader = new InputStreamReader(gzipStream);
+            BufferedReader bufferedReader = new BufferedReader(reader)
+        ) {
+            long lineCount = bufferedReader.lines().count();
+            totalLines.set((int) lineCount);
+            logger.info("Total lines in data file: {}", lineCount);
+        }
+    }
+    
+    /**
+     * Process the downloaded weather data file
+     */
     private void processWeatherDataFile(Path dataFile) throws IOException {
         // Map of file writers for each station
         Map<String, Writer> stationWriters = new HashMap<>();
@@ -111,6 +244,7 @@ public class WeatherDataProcessor {
             
             while ((line = bufferedReader.readLine()) != null) {
                 lineCount++;
+                processedLines.incrementAndGet();
                 
                 // Handle potential empty lines
                 if (line.trim().isEmpty()) {
@@ -165,13 +299,19 @@ public class WeatherDataProcessor {
                     writer.write(json);
                     
                     // Track this station
-                    allStations.add(stationId);
+                    if (!allStations.contains(stationId)) {
+                        allStations.add(stationId);
+                        processedStations.incrementAndGet();
+                    }
                     validLines++;
                     
                     // Log progress periodically
                     if (lineCount % 100000 == 0) {
-                        logger.info("Processed {} lines ({} valid), found {} unique stations", 
-                                lineCount, validLines, allStations.size());
+                        int total = totalLines.get();
+                        int percent = (int)((lineCount * 100.0) / total);
+                        currentStatus = String.format("Processing: %d%% - %d lines (%d valid), found %d stations", 
+                                percent, lineCount, validLines, allStations.size());
+                        logger.info(currentStatus);
                     }
                 } catch (Exception e) {
                     logger.warn("Error processing line {}: {}. Error: {}", lineCount, line, e.getMessage());
@@ -180,6 +320,7 @@ public class WeatherDataProcessor {
             
             logger.info("Finished reading data file. Total lines: {}, Valid lines: {}, Unique stations: {}", 
                     lineCount, validLines, allStations.size());
+            currentStatus = "Finalizing JSON files";
             
             // Close all writers and finalize the JSON files
             for (Map.Entry<String, Writer> entry : stationWriters.entrySet()) {
@@ -210,7 +351,9 @@ public class WeatherDataProcessor {
         }
     }
     
-    // Gets or creates a writer for a station ID
+    /**
+     * Gets or creates a writer for a station ID
+     */
     private Writer getStationWriter(String stationId, Map<String, Writer> stationWriters, Map<String, Boolean> stationStarted) throws IOException {
         if (!stationWriters.containsKey(stationId)) {
             // Create a new file for this station

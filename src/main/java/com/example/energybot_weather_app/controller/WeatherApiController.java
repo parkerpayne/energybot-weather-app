@@ -1,6 +1,7 @@
 package com.example.energybot_weather_app.controller;
 
 import com.example.energybot_weather_app.model.WeatherRecord;
+import com.example.energybot_weather_app.service.WeatherDataProcessor;
 import com.example.energybot_weather_app.service.WeatherDataService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,12 +19,54 @@ public class WeatherApiController {
     private static final Logger logger = LoggerFactory.getLogger(WeatherApiController.class);
     
     private final WeatherDataService weatherDataService;
+    private final WeatherDataProcessor weatherDataProcessor;
     
-    public WeatherApiController(WeatherDataService weatherDataService) {
+    public WeatherApiController(WeatherDataService weatherDataService, WeatherDataProcessor weatherDataProcessor) {
         this.weatherDataService = weatherDataService;
+        this.weatherDataProcessor = weatherDataProcessor;
     }
     
-    // API documentation endpoint
+    /**
+     * System status endpoint - check if data processing is complete
+     */
+    @GetMapping("/status")
+    public Map<String, Object> getSystemStatus() {
+        boolean isReady = weatherDataProcessor.isProcessingComplete();
+        Map<String, Object> response = new LinkedHashMap<>();
+        
+        response.put("ready", isReady);
+        response.put("status", isReady ? "ready" : "initializing");
+        
+        if (!isReady) {
+            Map<String, Object> progress = weatherDataProcessor.getProcessingProgress();
+            boolean isDownloading = progress.containsKey("isDownloading") && 
+                                   Boolean.TRUE.equals(progress.get("isDownloading"));
+            
+            String currentPhase = isDownloading ? "Downloading weather data file" : "Processing weather data";
+            
+            String message;
+            if (isDownloading) {
+                // Safely convert to double regardless of whether it's Integer or Double
+                Number downloadPercent = progress.containsKey("downloadPercent") ? 
+                                       (Number)progress.get("downloadPercent") : 0;
+                message = String.format("Downloading weather data file (%.1f%%)", downloadPercent.doubleValue());
+            } else {
+                // Safely convert to double regardless of whether it's Integer or Double
+                Number percentComplete = progress.containsKey("percentComplete") ? 
+                                       (Number)progress.get("percentComplete") : 0;
+                message = String.format("%s (%.1f%%)", currentPhase, percentComplete.doubleValue());
+            }
+            
+            response.put("message", message);
+            response.put("progress", progress);
+        }
+        
+        return response;
+    }
+    
+    /**
+     * API documentation endpoint
+     */
     @GetMapping
     public ResponseEntity<Map<String, Object>> getApiDocumentation() {
         Map<String, Object> docs = new LinkedHashMap<>();
@@ -58,6 +101,15 @@ public class WeatherApiController {
         stationEndpoint.put("examples", stationExamples);
         
         endpoints.put("stationData", stationEndpoint);
+        
+        // Status endpoint
+        Map<String, Object> statusEndpoint = new LinkedHashMap<>();
+        statusEndpoint.put("method", "GET");
+        statusEndpoint.put("description", "Check system status and data processing progress");
+        statusEndpoint.put("url", "/api/status");
+        
+        endpoints.put("systemStatus", statusEndpoint);
+        
         docs.put("endpoints", endpoints);
         
         // Data format information
@@ -74,13 +126,32 @@ public class WeatherApiController {
         return ResponseEntity.ok(docs);
     }
     
-    // Get weather data for a specific station
+    /**
+     * Get weather data for a specific station
+     * 
+     * @param stationId The station ID to retrieve data for
+     * @param elementType Optional filter for specific element type (e.g., TMAX, PRCP)
+     * @param startDate Optional filter for start date (YYYYMMDD format)
+     * @param endDate Optional filter for end date (YYYYMMDD format)
+     * @return JSON response containing station weather data
+     */
     @GetMapping("/station/{stationId}")
-    public ResponseEntity<?> getStationData(
+    public ResponseEntity<Map<String, Object>> getStationData(
             @PathVariable String stationId,
             @RequestParam(required = false) String elementType,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
+        
+        // Check if system is ready
+        if (!weatherDataProcessor.isProcessingComplete()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of(
+                            "error", "System is initializing",
+                            "message", "Weather data is still being processed. Please try again later.",
+                            "status", "INITIALIZING",
+                            "progress", weatherDataProcessor.getProcessingProgress()
+                    ));
+        }
         
         logger.info("Received request for station data: {}, elementType: {}, startDate: {}, endDate: {}", 
                 stationId, elementType, startDate, endDate);
@@ -103,10 +174,24 @@ public class WeatherApiController {
                                 "data", stationData));
             }
             
-            return ResponseEntity.ok()
-                    .body(Map.of("stationId", stationId,
-                            "count", stationData.size(),
-                            "data", stationData));
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("stationId", stationId);
+            response.put("count", stationData.size());
+            response.put("data", stationData);
+            
+            if (elementType != null) {
+                response.put("elementType", elementType);
+            }
+            
+            if (startDate != null) {
+                response.put("startDate", startDate);
+            }
+            
+            if (endDate != null) {
+                response.put("endDate", endDate);
+            }
+            
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error retrieving data for station {}: {}", stationId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
