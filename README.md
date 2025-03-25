@@ -22,3 +22,11 @@ This is my submission for EnergyBot's coding project. The application provides a
    java -jar build/libs/energybot-weather-app-0.0.1-SNAPSHOT.jar
    ```
 
+4. Access through API or web interface:
+   - Web Interface: Open http://localhost:8080 in your browser
+   - API Endpoint: http://localhost:8080/api/weather-data
+     - Parameters:
+       - stationId (required): The NOAA station ID (e.g., USC00186350)
+       - elementType (optional): Type of weather data (PRCP, TMAX, TMIN, SNOW, SNWD)
+       - startDate (optional): Start date in YYYY-MM-DD format
+       - endDate (optional): End date in YYYY-MM-DD format
